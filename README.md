@@ -11,6 +11,10 @@ Advanced tabular benchmark where **numeric and high-cardinality categorical** fe
 
 Same stratified folds and ROC-AUC for fair comparison.
 
+## Real-world data (education sector)
+
+Uses **`data/student-mat.csv`** from the UCI *Student Performance* dataset (mathematics, secondary school, Portugal): [UCI ML Repository — Student Performance](https://archive.ics.uci.edu/dataset/320/student+performance). Target is **pass vs not-pass** (`G3 >= 10`) with **`G1`/`G2` dropped** so categoricals from the questionnaire drive most of the signal.
+
 ## Quickstart
 
 ```bash
@@ -36,7 +40,7 @@ flowchart TB
 ## API
 
 - `GET /health`
-- `POST /v1/compare` — JSON `{"n_samples": 1200, "cv_splits": 3}`
+- `POST /v1/compare` — JSON `{"cv_splits": 3}` (optional)
 
 ## Why recruiters care
 

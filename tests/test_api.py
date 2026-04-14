@@ -10,6 +10,8 @@ def test_health() -> None:
 
 
 def test_compare() -> None:
-    r = client.post("/v1/compare", json={"n_samples": 800, "cv_splits": 3})
+    r = client.post("/v1/compare", json={"cv_splits": 3})
     assert r.status_code == 200
-    assert len(r.json()["leaderboard"]) == 3
+    body = r.json()
+    assert len(body["leaderboard"]) == 3
+    assert "data_source" in body

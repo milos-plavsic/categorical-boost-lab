@@ -10,23 +10,16 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, OrdinalEncoder
 from xgboost import XGBClassifier
 
-from app.data import CAT_COLS, N_NUMERIC, ordered_frame
+from app.data import discover_columns, ordered_frame
 
 
-def _num_cols() -> list[str]:
-    return [f"n{i}" for i in range(N_NUMERIC)]
-
-
-def build_pipelines(random_state: int = 42) -> dict[str, object]:
-    num = _num_cols()
-    cat = CAT_COLS
-
+def build_pipelines(num: list[str], cat: list[str], random_state: int = 42) -> dict[str, object]:
     pre_rf = ColumnTransformer(
         transformers=[
             ("num", "passthrough", num),
             (
                 "cat",
-                OneHotEncoder(handle_unknown="ignore", max_categories=32, sparse_output=False),
+                OneHotEncoder(handle_unknown="ignore", max_categories=48, sparse_output=False),
                 cat,
             ),
         ]
@@ -99,8 +92,9 @@ def run_comparison(
     random_state: int = 42,
 ) -> dict[str, dict]:
     X = ordered_frame(df)
+    num, cat = discover_columns(X)
     cv = StratifiedKFold(n_splits=cv_splits, shuffle=True, random_state=random_state)
-    models = build_pipelines(random_state)
+    models = build_pipelines(num, cat, random_state)
     results: dict[str, dict] = {}
     for name, est in models.items():
         scores = cross_val_score(

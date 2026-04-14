@@ -3,6 +3,7 @@ from pydantic import BaseModel, Field
 
 from app.data import DATA_SOURCE, load_student_math
 from app.train import leaderboard, run_comparison
+from finetune.tuner import run_rf_pipeline_finetune
 
 app = FastAPI(title="Categorical Boost Lab", version="0.1.0")
 
@@ -22,3 +23,8 @@ def compare(body: CompareRequest) -> dict:
     results = run_comparison(df, y, cv_splits=body.cv_splits)
     board = [{"model": n, "roc_auc_mean": m, "roc_auc_std": s} for n, m, s in leaderboard(results)]
     return {"leaderboard": board, "raw": results, "data_source": DATA_SOURCE}
+
+
+@app.post("/v1/finetune/rf_pipeline")
+def finetune_rf_pipeline() -> dict:
+    return run_rf_pipeline_finetune()

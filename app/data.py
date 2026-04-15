@@ -26,13 +26,14 @@ def _ensure_student_mat_csv(path: Path) -> None:
         raise RuntimeError("Could not obtain student-mat.csv from UCI") from e
 
 
-def load_student_math() -> tuple[pd.DataFrame, np.ndarray]:
-    """Features + binary pass label (G3 >= 10); prior grades G1/G2 dropped."""
+def load_student_math(*, include_prior_grades: bool = False) -> tuple[pd.DataFrame, np.ndarray]:
+    """Features + binary pass label (G3 >= 10)."""
     path = project_root() / "data" / "student-mat.csv"
     _ensure_student_mat_csv(path)
     df = pd.read_csv(path, sep=";")
     y = (df["G3"] >= 10).astype(int).to_numpy()
-    X = df.drop(columns=["G1", "G2", "G3"])
+    drop_cols = ["G3"] if include_prior_grades else ["G1", "G2", "G3"]
+    X = df.drop(columns=drop_cols)
     return X, y
 
 
@@ -43,6 +44,5 @@ def discover_columns(X: pd.DataFrame) -> tuple[list[str], list[str]]:
 
 
 def ordered_frame(df: pd.DataFrame) -> pd.DataFrame:
-    """Stable column order for pipelines and tuning."""
     cols = sorted(df.columns)
     return df[cols].copy()

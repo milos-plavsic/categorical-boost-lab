@@ -1,114 +1,135 @@
 from __future__ import annotations
 
+import copy
+
 import numpy as np
 import pandas as pd
 from catboost import CatBoostClassifier
+from sklearn.base import clone
 from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import StratifiedKFold, cross_val_score
+from sklearn.metrics import roc_auc_score
+from sklearn.model_selection import StratifiedKFold
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder, OrdinalEncoder
+from sklearn.preprocessing import FunctionTransformer, OneHotEncoder, OrdinalEncoder
 from xgboost import XGBClassifier
 
-from app.data import discover_columns, ordered_frame
+from app.data import discover_columns
 
 
-def build_pipelines(num: list[str], cat: list[str], random_state: int = 42) -> dict[str, object]:
+def _catboost_prep(X: pd.DataFrame, num_cols: list[str], cat_cols: list[str]) -> pd.DataFrame:
+    out = X[num_cols + cat_cols].copy()
+    for c in cat_cols:
+        out[c] = out[c].astype(str)
+    return out
+
+
+def build_pipelines(
+    num_cols: list[str],
+    cat_cols: list[str],
+    random_state: int = 42,
+) -> dict[str, Pipeline]:
+    """Three stacks: RF + one-hot, XGB + ordinal encoding, CatBoost with native categoricals."""
+    rf = RandomForestClassifier(
+        n_estimators=120,
+        max_depth=12,
+        min_samples_leaf=2,
+        n_jobs=4,
+        random_state=random_state,
+        class_weight="balanced_subsample",
+    )
+    try:
+        ohe = OneHotEncoder(handle_unknown="ignore", sparse_output=False)
+    except TypeError:
+        ohe = OneHotEncoder(handle_unknown="ignore", sparse=False)
     pre_rf = ColumnTransformer(
-        transformers=[
-            ("num", "passthrough", num),
-            (
-                "cat",
-                OneHotEncoder(handle_unknown="ignore", max_categories=48, sparse_output=False),
-                cat,
-            ),
-        ]
+        [
+            ("num", "passthrough", num_cols),
+            ("cat", ohe, cat_cols),
+        ],
+        remainder="drop",
     )
-    rf = Pipeline(
-        steps=[
-            ("prep", pre_rf),
-            (
-                "clf",
-                RandomForestClassifier(
-                    n_estimators=100,
-                    max_depth=12,
-                    min_samples_leaf=2,
-                    n_jobs=4,
-                    random_state=random_state,
-                    class_weight="balanced_subsample",
-                ),
-            ),
-        ]
-    )
+    rf_pipe = Pipeline([("prep", pre_rf), ("clf", rf)])
 
+    xgb = XGBClassifier(
+        n_estimators=120,
+        max_depth=5,
+        learning_rate=0.08,
+        subsample=0.85,
+        colsample_bytree=0.85,
+        reg_lambda=1.0,
+        random_state=random_state,
+        objective="binary:logistic",
+        eval_metric="logloss",
+        verbosity=0,
+    )
     pre_xgb = ColumnTransformer(
-        transformers=[
-            ("num", "passthrough", num),
+        [
+            ("num", "passthrough", num_cols),
             (
                 "cat",
                 OrdinalEncoder(handle_unknown="use_encoded_value", unknown_value=-1),
-                cat,
+                cat_cols,
             ),
-        ]
+        ],
+        remainder="drop",
     )
-    xgb = Pipeline(
-        steps=[
-            ("prep", pre_xgb),
-            (
-                "clf",
-                XGBClassifier(
-                    n_estimators=100,
-                    max_depth=5,
-                    learning_rate=0.08,
-                    subsample=0.85,
-                    colsample_bytree=0.85,
-                    reg_lambda=1.0,
-                    random_state=random_state,
-                    eval_metric="logloss",
-                    verbosity=0,
-                ),
-            ),
-        ]
-    )
+    xgb_pipe = Pipeline([("prep", pre_xgb), ("clf", xgb)])
 
+    cat_idx = list(range(len(num_cols), len(num_cols) + len(cat_cols)))
     cb = CatBoostClassifier(
-        iterations=100,
-        depth=5,
+        iterations=120,
+        depth=6,
         learning_rate=0.08,
         loss_function="Logloss",
-        cat_features=cat,
         verbose=False,
         random_seed=random_state,
         allow_writing_files=False,
+        cat_features=cat_idx,
     )
+    cb_prep = FunctionTransformer(
+        lambda X, nc=num_cols, cc=cat_cols: _catboost_prep(X, nc, cc),
+        validate=False,
+    )
+    cb_pipe = Pipeline([("prep", cb_prep), ("clf", cb)])
 
-    return {"random_forest_onehot": rf, "xgboost_ordinal": xgb, "catboost_native": cb}
+    return {
+        "random_forest_onehot": rf_pipe,
+        "xgboost_ordinal": xgb_pipe,
+        "catboost_native": cb_pipe,
+    }
 
 
 def run_comparison(
-    df: pd.DataFrame,
+    X: pd.DataFrame,
     y: np.ndarray,
     cv_splits: int = 3,
     random_state: int = 42,
 ) -> dict[str, dict]:
-    X = ordered_frame(df)
     num, cat = discover_columns(X)
+    models = build_pipelines(num, cat, random_state=random_state)
     cv = StratifiedKFold(n_splits=cv_splits, shuffle=True, random_state=random_state)
-    models = build_pipelines(num, cat, random_state)
     results: dict[str, dict] = {}
-    for name, est in models.items():
-        scores = cross_val_score(
-            est,
-            X,
-            y,
-            cv=cv,
-            scoring="roc_auc",
-            n_jobs=1,
-        )
+    for name, clf in models.items():
+        fold_scores: list[float] = []
+        for train_idx, val_idx in cv.split(X, y):
+            X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
+            y_train, y_val = y[train_idx], y[val_idx]
+            if len(np.unique(y_val)) < 2:
+                fold_scores.append(float("nan"))
+                continue
+            try:
+                est = clone(clf)
+            except Exception:
+                est = copy.deepcopy(clf)
+            est.fit(X_train, y_train)
+            proba = est.predict_proba(X_val)[:, 1]
+            fold_scores.append(float(roc_auc_score(y_val, proba)))
+        arr = np.asarray(fold_scores, dtype=float)
         results[name] = {
-            "roc_auc_mean": float(np.mean(scores)),
-            "roc_auc_std": float(np.std(scores)),
-            "folds": [float(s) for s in scores],
+            "roc_auc_mean": float(np.nanmean(arr)),
+            "roc_auc_std": float(np.nanstd(arr)),
+            "folds": [float(s) for s in fold_scores],
         }
     return results
 

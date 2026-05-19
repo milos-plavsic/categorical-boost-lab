@@ -5,6 +5,7 @@ from app.train import leaderboard, run_comparison
 
 
 def test_three_model_families() -> None:
+    """Execute the test three model families routine."""
     df, y = load_student_math()
     out = run_comparison(df, y, cv_splits=3, random_state=0)
     assert set(out.keys()) == {"random_forest_onehot", "xgboost_ordinal", "catboost_native"}
@@ -15,6 +16,7 @@ def test_three_model_families() -> None:
 
 
 def test_leaderboard_non_increasing() -> None:
+    """Execute the test leaderboard non increasing routine."""
     df, y = load_student_math()
     out = run_comparison(df, y, cv_splits=3, random_state=2)
     board = leaderboard(out)

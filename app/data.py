@@ -4,6 +4,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from ml_core import validate_dataframe as _ml_validate_dataframe
 
 from app.uci_fetch import fetch_uci_student_csv
 
@@ -14,10 +15,12 @@ DATA_SOURCE = (
 
 
 def project_root() -> Path:
+    """Execute the project root routine."""
     return Path(__file__).resolve().parent.parent
 
 
 def _ensure_student_mat_csv(path: Path) -> None:
+    """Internal helper that handles ensure student mat csv."""
     if path.exists():
         return
     try:
@@ -31,18 +34,23 @@ def load_student_math(*, include_prior_grades: bool = False) -> tuple[pd.DataFra
     path = project_root() / "data" / "student-mat.csv"
     _ensure_student_mat_csv(path)
     df = pd.read_csv(path, sep=";")
+    _ml_validate_dataframe(df)
     y = (df["G3"] >= 10).astype(int).to_numpy()
+    if not include_prior_grades:
+        df["prior_grade_mean"] = df[["G1", "G2"]].mean(axis=1)
     drop_cols = ["G3"] if include_prior_grades else ["G1", "G2", "G3"]
     X = df.drop(columns=drop_cols)
     return X, y
 
 
 def discover_columns(X: pd.DataFrame) -> tuple[list[str], list[str]]:
+    """Execute the discover columns routine."""
     num = list(X.select_dtypes(include=[np.number]).columns)
     cat = list(X.select_dtypes(exclude=[np.number]).columns)
     return num, cat
 
 
 def ordered_frame(df: pd.DataFrame) -> pd.DataFrame:
+    """Execute the ordered frame routine."""
     cols = sorted(df.columns)
     return df[cols].copy()

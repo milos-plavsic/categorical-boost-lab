@@ -2,14 +2,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from app.data import DATA_SOURCE, load_student_math
-from app.train import run_comparison
 from analysis.json_util import dumps_pretty
 from analysis.plotting import bar_with_errors, fold_line_plot
 from analysis.stats_utils import comparison_table
+from app.data import DATA_SOURCE, load_student_math
+from app.train import run_comparison
 
 
 def generate_report(out_dir: Path | None = None, cv_splits: int = 3) -> dict:
+    """Execute the generate report routine."""
     out = Path(out_dir or "reports")
     fig_dir = out / "figures"
     out.mkdir(parents=True, exist_ok=True)
@@ -35,7 +36,7 @@ def generate_report(out_dir: Path | None = None, cv_splits: int = 3) -> dict:
         means,
         stds,
         fig_dir / "roc_auc_encoding_comparison.png",
-        title="UCI student math — encoding × model family (ROC-AUC)",
+        title="UCI student math — encoding x model family (ROC-AUC)",
         ylabel="ROC-AUC",
     )
 
@@ -68,6 +69,7 @@ def generate_report(out_dir: Path | None = None, cv_splits: int = 3) -> dict:
 
 
 def main() -> None:
+    """Execute the main routine."""
     print(dumps_pretty(generate_report()))
 
 
